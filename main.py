@@ -1,7 +1,9 @@
 import time
 
 from Game import *
+from players.Simple_ISMCTS import Simple_ISMCTS
 import csv
+import json
 
 
 def main(save_scores=False):
@@ -17,14 +19,19 @@ def main(save_scores=False):
                                     ss.bets[Player.west]])
 
         if ss.playerToMove == Player.north:
-            #st = time.time()
-            #m = ParaISMCTS_driver(rootstate=ss, total_iter=5000, verbose=0, numWorkers=5)
+            st = time.time()
+            # m = ParaISMCTS_driver(rootstate=ss, total_iter=5000, verbose=0, numWorkers=5)
 
-            m = ISMCTS(rootstate=ss, itermax=1000, verbose=0)
-            #print('Time taken = {} seconds'.format(time.time() - st))
+            pl = Simple_ISMCTS(rootState = ss, player = ss.playerToMove, max_iter = 100)
+            m = pl.search()
+            # print(pl.MAST)
+            # print(pl.MAST_n)
+#            print(np.divide(pl.MAST, pl.MAST_n))
+            print('Time taken = {} seconds'.format(time.time() - st))
 
         else:
-            m = ISMCTS(rootstate=ss, itermax=5, verbose=0)
+            pl = Simple_ISMCTS(rootState = ss, player = ss.playerToMove, max_iter = 5)
+            m = pl.search()
 
         print("Best Move: " + str(m) + "\n")
         ss.DoMove(m)
@@ -40,18 +47,22 @@ def main(save_scores=False):
 
 
 def main2(ngames):
-    score_track = {"NS": 0, "EW": 0}
+    score_track = {"NS": 0, "EW": 0, "Scores": [[], []], "Margin": []}
     for i in range(ngames):
         ss = SpadesGameState(Player.north)
         ss.SCORE_LIMIT = 400
-        ss.EXPLORATION = .5
+        #ss.EXPLORATION = .5
         while ss.GetMoves():
             # print(ss)
             if ss.playerToMove == Player.north or ss.playerToMove == Player.south:
-                m = ISMCTS(rootstate=ss, itermax=1000, verbose=2)
+                pl = Simple_ISMCTS(rootState = ss, player = ss.playerToMove, max_iter = 100)
+                #m = ISMCTS(rootstate=ss, itermax=1000, verbose=2)
+                m = pl.search()
             else:
-                #m = ISMCTS(rootstate=ss, itermax=5, verbose=0)
-                m = random.choice(ss.GetMoves())
+                # m = ISMCTS(rootstate=ss, itermax=5, verbose=0)
+                #m = random.choice(ss.GetMoves())
+                pl = Simple_ISMCTS(rootState = ss, player = ss.playerToMove, max_iter = 100)
+                m = pl.search()
 
             # print("Best Move: " + str(m) + "\n")
             ss.DoMove(m)
@@ -59,14 +70,18 @@ def main2(ngames):
             score_track["NS"] += 1
         else:
             score_track["EW"] += 1
+        score_track["Margin"].append(ss.NSscore[0] - ss.EWscore[0])
+        score_track["Scores"][0].append(ss.NSscore[0])
+        score_track["Scores"][1].append(ss.EWscore[0])
         print(str(ss.NSscore) + str(ss.EWscore))
-        print(score_track)
+
+    with open("scores/main2_output.json", 'w') as f:
+        json.dump(score_track, f)
 
     print(score_track)
 
 
-
 if __name__ == "__main__":
     #random.seed(123)
-    main(save_scores=False)
-    #main2(ngames = 50)
+    #main(save_scores=False)
+    main()

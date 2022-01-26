@@ -406,6 +406,9 @@ to Create Engaging Play in a Commercial Mobile Game" by Whitehouse et. al
         return result
 
 
+IDs = [0] * 52
+
+
 class Node:
     """
     A node in the game tree. Note wins is always from the viewpoint of playerJustMoved.
@@ -421,6 +424,12 @@ class Node:
         self.avails = 1
         self.playerJustMoved = playerJustMoved  # the only part of the state that the Node needs later
 
+        if move is None:
+            self.id = "root"
+        else:
+            self.id = str(move) + "." + str(IDs[move.__hash__()])
+            IDs[move.__hash__()] += 1
+
     def GetUntriedMoves(self, legalMoves):
         """ Return the elements of legalMoves for which this node does not have children.
         """
@@ -432,56 +441,6 @@ class Node:
         return [move for move in legalMoves if move not in triedMoves]
 
     # 0.7
-    def SelectChild(self, legalMoves, exploration=.7):
-        raise NotImplementedError()
-
-    def AddChild(self, m, p):
-        raise NotImplementedError()
-
-    def Update(self, terminalState):
-        """ Update this node - increment the visit count by one, and increase the win count by the result of terminalState for self.playerJustMoved.
-        """
-        self.visits += 1
-        if self.playerJustMoved is not None:
-            # scores, bags = terminalState.score() # the state get dealt again before being able to score it so this doesnt work
-            self.wins += terminalState.GetResult(self.playerJustMoved)
-
-    def __repr__(self):
-        return "[M:%s W/V/A: %4f/%4i/%4i]" % (self.move, self.wins, self.visits, self.avails)
-
-    def TreeToString(self, indent):
-        """ Represent the tree as a string, for debugging purposes.
-        """
-        s = self.IndentString(indent) + str(self)
-        if self.parentNode is not None:
-            s = s + " " + str(self.parentNode.move) + ":" + str(self.parentNode.wins)
-        for c in self.childNodes:
-            s += c.TreeToString(indent + 1)
-        return s
-
-    @staticmethod
-    def IndentString(indent):
-        s = "\n"
-        for i in range(1, indent + 1):
-            s += "| "
-        return s
-
-    def ChildrenToString(self):
-        s = ""
-        for c in self.childNodes:
-            s += str(c) + "\n"
-        return s
-
-
-class UCBNode(Node):
-    """
-    A node in the game tree. Note wins is always from the viewpoint of playerJustMoved.
-    This node implements the UCB method for selecting children
-    """
-
-    def __init__(self, move=None, parent=None, playerJustMoved=None):
-        super().__init__(move, parent, playerJustMoved)
-
     def SelectChild(self, legalMoves, exploration=.7):
         """ Use the UCB1 formula to select a child node, filtered by the given list of legal moves.
             exploration is a constant balancing between exploitation and exploration, with default value 0.7 (approximately sqrt(2) / 2)
@@ -505,83 +464,99 @@ class UCBNode(Node):
         """ Add a new child node for the move m.
             Return the added child node
         """
-        n = UCBNode(move=m, parent=self, playerJustMoved=p)
+        n = Node(move=m, parent=self, playerJustMoved=p)
         self.childNodes.append(n)
         return n
 
-
-class UrgencyNode(Node):
-    def __init__(self, move=None, parent=None, playerJustMoved=None):
-        super().__init__(move, parent, playerJustMoved)
-
-    def SelectChild(self, legalMoves, exploration=.7):
-        d = 1
-
-    def AddChild(self, m, p):
-        """ Add a new child node for the move m.
-            Return the added child node
+    def Update(self, terminalState):
+        """ Update this node - increment the visit count by one, and increase the win count by the result of terminalState for self.playerJustMoved.
         """
-        n = UrgencyNode(move=m, parent=self, playerJustMoved=p)
-        self.childNodes.append(n)
-        return n
+        self.visits += 1
+        if self.playerJustMoved is not None:
+            # scores, bags = terminalState.score() # the state get dealt again before being able to score it so this doesnt work
+            self.wins += terminalState.GetResult(self.playerJustMoved)
+
+    def __repr__(self):
+        return "[M:%s W/V/A: %4f/%4i/%4i]" % (self.id, self.wins, self.visits, self.avails)
+
+    def TreeToString(self, indent):
+        """ Represent the tree as a string, for debugging purposes.
+        """
+        s = self.IndentString(indent) + str(self)
+        if self.parentNode is not None:
+            s = s + " " + str(self.parentNode.id) + ":" + str(self.parentNode.wins)
+            # s = s + " " + str(indent) + ":" + str(self.computeNeighborHash())
+
+        for c in self.childNodes:
+            s += c.TreeToString(indent + 1)
+        return s
+
+    @staticmethod
+    def IndentString(indent):
+        s = "\n"
+        for i in range(1, indent + 1):
+            s += "| "
+        return s
+
+    def ChildrenToString(self):
+        s = ""
+        for c in self.childNodes:
+            s += str(c) + "\n"
+        return s
 
 
-def ISMCTS(rootstate, itermax, verbose=0, child_select_mode=ChildSelectMode.UCB):
-    """ Conduct an ISMCTS search for itermax iterations starting from rootstate.
-        Return the best move from the rootstate.
-    """
-
-    if child_select_mode == ChildSelectMode.UCB:
-        rootnode = UCBNode()
-    elif child_select_mode == ChildSelectMode.Urgency:
-        rootstate = UrgencyNode()
-    else:
-        raise Exception("Invalid mode")
-
-    for i in range(itermax):
-        node = rootnode
-
-        # Determinize
-        state = rootstate.CloneAndRandomize(rootstate.playerToMove)
-
-        # Select
-        # node is fully expanded and non-terminal
-        while state.GetMoves() != [] and node.GetUntriedMoves(state.GetMoves()) == []:
-            # scale the exploration value as the game goes on.
-            node = node.SelectChild(state.GetMoves(), state.EXPLORATION)
-            state.DoMove(node.move)
-
-        # Expand
-        untriedMoves = node.GetUntriedMoves(state.GetMoves())
-        if untriedMoves:  # if we can expand (i.e. state/node is non-terminal)
-            m = random.choice(untriedMoves)
-            player = state.playerToMove
-            state.DoMove(m)
-
-            node = node.AddChild(m, player)  # add child and descend tree
-
-        # Simulate
-        while state.GetMoves():  # while state is non-terminal
-
-            # When the last card of the hand is going to be played break from the rollout
-            if len(state.playerHands[Player.north]) + len(state.playerHands[Player.east]) + len(
-                    state.playerHands[Player.south]) + len(state.playerHands[Player.west]) == 1:
-                state.DoMove(random.choice(state.GetMoves()))
-                break
-            state.DoMove(random.choice(state.GetMoves()))
-
-        # Backpropagate
-        while node is not None:  # backpropagate from the expanded node and work back to the root node
-            node.Update(state)
-            node = node.parentNode
-
-    # Output some information about the tree - can be omitted
-    if verbose == 2:
-        print(rootnode.TreeToString(0))
-    elif verbose == 1:
-        print(rootnode.ChildrenToString())
-
-    return max(rootnode.childNodes, key=lambda c: c.visits).move  # return the move that was most visited
+#
+# def ISMCTS(rootstate, itermax, verbose=0, child_select_mode=ChildSelectMode.UCB):
+#     """ Conduct an ISMCTS search for itermax iterations starting from rootstate.
+#         Return the best move from the rootstate.
+#     """
+#
+#     rootnode = Node()
+#
+#     for i in range(itermax):
+#         node = rootnode
+#
+#         # Determinize
+#         state = rootstate.CloneAndRandomize(rootstate.playerToMove)
+#
+#         # Select
+#         # node is fully expanded and non-terminal
+#         while state.GetMoves() != [] and node.GetUntriedMoves(state.GetMoves()) == []:
+#             # scale the exploration value as the game goes on.
+#             node = node.SelectChild(state.GetMoves(), state.EXPLORATION)
+#             state.DoMove(node.move)
+#
+#         # Expand
+#         untriedMoves = node.GetUntriedMoves(state.GetMoves())
+#         if untriedMoves:  # if we can expand (i.e. state/node is non-terminal)
+#             m = random.choice(untriedMoves)
+#             player = state.playerToMove
+#             state.DoMove(m)
+#
+#             node = node.AddChild(m, player)  # add child and descend tree
+#
+#         # Simulate
+#         while state.GetMoves():  # while state is non-terminal
+#
+#             # When the last card of the hand is going to be played break from the rollout
+#             if len(state.playerHands[Player.north]) + len(state.playerHands[Player.east]) + len(
+#                     state.playerHands[Player.south]) + len(state.playerHands[Player.west]) == 1:
+#                 state.DoMove(random.choice(state.GetMoves()))
+#                 break
+#             state.DoMove(random.choice(state.GetMoves()))
+#
+#         # Backpropagate
+#         while node is not None:  # backpropagate from the expanded node and work back to the root node
+#             node.Update(state)
+#             node = node.parentNode
+#
+#     # Output some information about the tree - can be omitted
+#     if verbose == 2:
+#         print(rootnode.TreeToString(0))
+#     elif verbose == 1:
+#         print(rootnode.ChildrenToString())
+#
+#     return max(rootnode.childNodes, key=lambda c: c.visits).move  # return the move that was most visited
 
 
 def ParaISMCTS(rootstate, itermax, verbose=0):
